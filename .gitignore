@@ -1,0 +1,28 @@
+# Virtual environment
+/env
+.env
+.env.*
+
+# Flake 8
+.flake8
+
+# DB
+*.sqlite3
+
+# Otros
+Todo.txt
+__pycache__/
+temp/
+local_settings*.py
+/carpetas
+*.log
+
+/static
+/staticfiles
+profile_images/
+
+/docs/html/
+/static/
+
+docs/_build
+.coverage
