@@ -60,14 +60,37 @@ These are implementation decisions, not additional assignment requirements.
   The provider may snap them to nearby roads; snap/access distances are not
   fuel-station detour measurements.
 - Include the initial fuel purchase at the selected origin in total money spent;
-  do not treat an initially full tank as free fuel. This routing-only iteration
-  does not yet calculate fuel purchases or return a rendered map.
+  start with an empty tank and buy the cost-optimal quantity at the cheapest
+  listed station in the origin city. If no priced station exists there, return
+  HTTP 422 rather than invent a price. US CSV prices are assumed to be USD per
+  US gallon and comparable across listed stations.
+- Tank capacity is 50 US gallons (500 miles at 10 MPG). There is no required
+  destination reserve; purchases minimize fuel cost under the fixed-route model.
+  At a station, buy enough to reach the first cheaper reachable station;
+  otherwise fill to capacity or buy only enough to reach the destination.
+- Do not charge a fixed cost/time penalty per stop or impose a minimum purchase.
+  Small purchases and extra stops can therefore be optimal in this model.
+  Minimize unrounded fuel expenditure, then round individual purchase costs
+  for display; rounding can create cent-level ties or differences.
+- Consider only station cities within five straight-line miles of the route,
+  using their closest segment projection; ties use the first occurrence.
+  Use the cheapest listed station per city, with OPIS ID breaking price ties.
+  Exclude destination-city stations because fueling after arrival is unnecessary.
+- Estimate station progress by cumulative haversine length along route geometry,
+  scaled to the provider's total driving distance. Corridor offsets use local
+  tangent-plane segment projection. This is not a road-distance matrix.
+  No extra routing/geocoding calls are made for fuel selection.
+- Ignore access and detour miles in the agreed approximate model. Responses
+  explicitly label fuel plans as estimates; 500-mile feasibility and minimum
+  cost are guaranteed only within this model, not for actual station access.
+- Recompute fuel purchases from current database prices on every request,
+  including route-cache hits. Do not cache price-dependent plans with geometry.
+  Fuel amounts and money use decimal arithmetic; round each purchase cost to
+  USD cents, then sum those rounded costs. Monetary fields are JSON strings.
+- Return HTTP 422 if station gaps exceed the modeled 500-mile range or origin
+  pricing is unavailable. Trips longer than 500 miles are valid when a feasible
+  plan exists; HTTP 429 means rate limiting, not a long trip.
+- The API returns route GeoJSON plus purchases and leg fuel balances. A rendered
+  map is still outstanding; GeoJSON alone is not the final map deliverable.
 - See the [README](README.md) for dataset provenance, import results, and
   detailed location limitations.
-
-## Decisions to settle before fuel optimization
-
-- Initial fuel quantity and the origin price when no listed station is available.
-- Required fuel reserve at the destination.
-- Allowed detour distance and how approximate city locations affect estimates.
-- How to report insufficient station coverage or an infeasible fueling plan.

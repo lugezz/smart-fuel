@@ -210,8 +210,59 @@ Replace the example IDs with distinct cities from the list endpoint. The
 response includes `start`, `finish`, `route` (a GeoJSON Feature with a complete
 LineString), provider/location attribution, and `cached`. Route properties
 contain `distance_meters`, `distance_miles`, and `duration_seconds`.
-Geometry uses `[longitude, latitude]` order. This endpoint currently retrieves
-routes only: fuel stops, costs, and a rendered map are not implemented yet.
+Geometry uses `[longitude, latitude]` order. The response also includes
+`fuel_plan`, described below. A rendered map is not implemented yet.
+
+### Fuel purchases and cost
+
+`fuel_plan` contains:
+
+- `fuel_stops`: purchases in travel order, including the origin; station
+  identifiers, approximate city coordinates/attribution, distance along the
+  route, straight-line corridor offset, price, gallons purchased, fuel on
+  arrival/departure, and purchase cost. A station passed without buying is
+  not listed as a stop.
+- `legs`: travel between purchases, followed by the destination leg, with
+  distance, gallons consumed, and departure/arrival fuel.
+- `total_gallons_purchased`, `total_fuel_cost`, and `currency` (`USD`).
+  Decimal fuel/money values are strings. Purchase costs are rounded to cents;
+  the total is the sum of those displayed purchase costs.
+- Vehicle parameters, corridor width, `estimated: true`, and a limitation warning.
+
+The vehicle starts empty, buys the cost-optimal quantity at the cheapest listed
+origin-city station, and has a 50-gallon tank at 10 MPG. No destination reserve
+is required. A short trip buys only the fuel needed; an initially full tank is
+not assumed or treated as free. A trip longer than 500 miles is allowed, but
+every modeled leg must be reachable with the remaining fuel.
+The objective minimizes unrounded fuel expenditure, not stop count or travel
+time. There is no stop penalty or minimum purchase, so small purchases and
+multiple closely spaced stops can be selected. Individual cost rounding can
+create cent-level differences from the unrounded objective.
+
+Only resolved US station cities within five straight-line miles of the route
+are candidates. Their route progress is estimated from segment projections,
+scaled to the provider's total driving distance. Actual station access and
+detours are excluded. This gives minimum-cost purchases for the approximate
+fixed-route model, not a globally cheapest itinerary or verified real-world
+station reachability. All assumptions are in [requirements](REQUIREMENTS.md).
+
+If no priced origin station or feasible station chain exists, the endpoint
+returns HTTP 422 with a `detail` message; it does not fabricate stops or prices.
+USD per US gallon is assumed for US price records.
+On a geometry cache hit, fuel recommendations still use current database prices.
+
+To check a plan in Postman:
+
+1. Choose two resolved US city IDs and POST them to `/api/routes/`.
+2. Verify the origin purchase is included and each listed purchase is positive.
+3. Check each leg is at most 500 miles, fuel never goes below zero or above
+   50 gallons, and consumption equals distance divided by 10 (allowing display
+   rounding: miles show six decimal places and fuel shows eight).
+4. Sum purchase costs; they must equal `total_fuel_cost`. With zero initial
+   fuel/reserve, total gallons purchased equal total route miles divided by 10,
+   subject to display rounding.
+5. Repeat the request: `cached` should be true while prices are still recomputed.
+6. A route without enough candidate coverage returns 422, not 429.
 
 Each cache miss makes one driving-car GeoJSON directions request, with no
 endpoint-geocoding requests or automatic retries. Border crossings and ferries
@@ -230,7 +281,7 @@ invalidate geometry. Concurrent identical misses are not coalesced.
 Do not delete the cache table while serving requests.
 
 Errors are explicit: invalid/unavailable city IDs or identical endpoints return
-400; unsupported/no-route provider results return 422; missing keys,
+400; unsupported/no-route provider results or infeasible fuel plans return 422; missing keys,
 provider access denial, or quota exhaustion return 503; upstream failures or
 malformed responses return 502; timeouts return 504. Failed responses are never
 cached. Provider request timeout is 20 seconds. Provider failures are logged

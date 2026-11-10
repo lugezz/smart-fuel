@@ -26,7 +26,7 @@ PROVIDER_RESPONSE = {
             "type": "LineString",
             "coordinates": [[-95.274736, 36.607931], [-94.5, 37.0], [-90.491704, 43.994833]],
         },
-        "properties": {"summary": {"distance": 1609344, "duration": 54000}},
+        "properties": {"summary": {"distance": 643737.6, "duration": 54000}},
     }],
 }
 
@@ -38,11 +38,20 @@ class RoutingTests(TestCase):
         self.client = APIClient()
         self.start = self.city("Big Cabin", "OK", "36.607931", "-95.274736")
         self.finish = self.city("Tomah", "WI", "43.994833", "-90.491704")
+        self.origin_station(self.start)
         self.payload = {"start_city_id": self.start.pk, "finish_city_id": self.finish.pk}
         self.urlopen_patcher = patch("routing.services.urlopen")
         self.urlopen = self.urlopen_patcher.start()
         self.addCleanup(self.urlopen_patcher.stop)
         self.respond(PROVIDER_RESPONSE)
+
+    @staticmethod
+    def origin_station(city, opis_id=7):
+        return TruckStop.objects.create(
+            opis_id=opis_id, name="Test stop", address="I-44", city=city.city,
+            state=city.state, country="US", rack_id=307,
+            retail_price=3, city_location=city,
+        )
 
     @staticmethod
     def city(name, state, latitude, longitude, country="US", status="resolved"):
@@ -174,7 +183,7 @@ class RoutingTests(TestCase):
         self.assertEqual(route["type"], "Feature")
         self.assertEqual(route["geometry"], PROVIDER_RESPONSE["features"][0]["geometry"])
         self.assertEqual(route["properties"], {
-            "distance_meters": 1609344.0, "distance_miles": 1000.0, "duration_seconds": 54000.0,
+            "distance_meters": 643737.6, "distance_miles": 400.0, "duration_seconds": 54000.0,
         })
         self.urlopen.assert_called_once()
         request = self.urlopen.call_args.args[0]
@@ -198,6 +207,7 @@ class RoutingTests(TestCase):
 
     def test_direction_and_coordinate_changes_invalidate_cache(self) -> None:
         self.post_route()
+        self.origin_station(self.finish, opis_id=8)
         reverse = self.post_route({"start_city_id": self.finish.pk, "finish_city_id": self.start.pk})
         self.assertFalse(reverse.data["cached"])
         CityLocation.objects.filter(pk=self.finish.pk).update(latitude=44)
@@ -212,16 +222,13 @@ class RoutingTests(TestCase):
         self.assertEqual(self.urlopen.call_count, 2)
 
     def test_price_updates_do_not_change_route_cache_key(self) -> None:
-        station = TruckStop.objects.create(
-            opis_id=7, name="Test stop", address="I-44", city=self.start.city,
-            state=self.start.state, country="US", rack_id=307,
-            retail_price=3, city_location=self.start,
-        )
-        self.post_route()
+        station = TruckStop.objects.get(opis_id=7)
+        first = self.post_route()
         station.retail_price = 4
         station.save()
         response = self.post_route()
         self.assertTrue(response.data["cached"])
+        self.assertNotEqual(first.data["fuel_plan"]["total_fuel_cost"], response.data["fuel_plan"]["total_fuel_cost"])
         self.assertEqual(self.urlopen.call_count, 1)
 
     def test_invalid_ids_identical_endpoints_and_non_us_cities_make_no_requests(self) -> None:
@@ -323,6 +330,7 @@ class DatabaseRouteCacheTests(TransactionTestCase):
         caches["routes"].clear()
         start = RoutingTests.city("Big Cabin", "OK", "36.607931", "-95.274736")
         finish = RoutingTests.city("Tomah", "WI", "43.994833", "-90.491704")
+        RoutingTests.origin_station(start)
         payload = {"start_city_id": start.pk, "finish_city_id": finish.pk}
         with patch("routing.services.urlopen") as upstream:
             upstream.return_value.__enter__.return_value.read.return_value = json.dumps(PROVIDER_RESPONSE).encode()

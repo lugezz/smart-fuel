@@ -7,6 +7,7 @@ from rest_framework.views import APIView
 
 from truckstops.models import normalize_city
 
+from .fuel import make_fuel_plan
 from .serializers import (
     CityFilterSerializer,
     CitySerializer,
@@ -54,6 +55,7 @@ class RouteView(APIView):
         start = serializer.validated_data["start_city_id"]
         finish = serializer.validated_data["finish_city_id"]
         result = get_route(start, finish)
+        fuel_plan = make_fuel_plan(result.feature, start, finish)
         return Response({
             "start": CitySerializer(start).data,
             "finish": CitySerializer(finish).data,
@@ -62,4 +64,5 @@ class RouteView(APIView):
             "attribution": ATTRIBUTION,
             "location_attribution": list(dict.fromkeys([start.attribution, finish.attribution])),
             "cached": result.cached,
+            "fuel_plan": fuel_plan,
         })
