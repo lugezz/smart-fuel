@@ -1,5 +1,8 @@
 # SmartFuel
 
+See [assignment requirements](REQUIREMENTS.md) for the exercise scope,
+delivery requirements, and implementation assumptions.
+
 The `smart_fuel` package contains Django project configuration. Application
 packages such as `truckstops` live alongside it at the repository root.
 
@@ -147,9 +150,122 @@ coverage. Dataset updates may change these counts.
 No external geocoding service, API key, identifying User-Agent, or network
 access is required for city enrichment.
 
+## Routing API
+
+Routing uses [openrouteservice](https://openrouteservice.org/), which offers a
+free tier requiring an API key. Create a key in the provider's account portal
+and export it before starting Django. In PowerShell:
+
+```powershell
+$env:ORS_API_KEY = "YOUR_API_KEY"
+python manage.py createcachetable
+python manage.py runserver
+```
+
+In Git Bash, use `export ORS_API_KEY='YOUR_API_KEY'`. If using a local `.env`,
+export its assignments (`set -a; source .env; set +a`) before starting Django;
+the application does not automatically load it. Never commit API keys.
+The key is sent to openrouteservice only, not returned to the frontend.
+
+### Select cities
+
+```http
+GET /api/cities/?search=big&state=OK
+```
+
+The response contains `count`, `next`, `previous`, and `results`. Each result
+has `id`, `city`, `state`, `country`, and `precision`. Results are sorted by
+city/state/ID, with 50 per page (`?page=2`). Search is case-insensitive, and the
+optional `state` filter accepts US state codes. Only resolved US city records
+are listed. The current catalog covers fuel-stop cities, not every US city.
+Fetch IDs from this endpoint rather than hardcoding them across database resets.
+
+Retrieve one selectable city with `GET /api/cities/<id>/`. It returns the same
+fields as a list entry. Unknown IDs, unresolved cities, and non-US cities return
+HTTP 404 with a JSON `detail` error.
+
+API responses use JSON rendering, not DRF's HTML browsable API. Unknown paths
+under `/api/` also return `{"detail": "Not found."}` with HTTP 404, even with
+`DEBUG=True`. Use the documented trailing slashes; unmatched API paths are not
+redirected. Django admin and non-API error pages retain their normal behavior.
+For example, `POST /api/routes` (missing trailing slash) returns JSON 404,
+not a CSRF error. The API's not-found fallback performs no state changes and
+does not require a CSRF token. Django admin retains CSRF protection; DRF's
+session authentication also requires CSRF tokens for authenticated unsafe
+requests. For anonymous Postman testing, do not send an admin session cookie.
+
+### Request a route
+
+```http
+POST /api/routes/
+Content-Type: application/json
+
+{
+  "start_city_id": 123,
+  "finish_city_id": 456
+}
+```
+
+Replace the example IDs with distinct cities from the list endpoint. The
+response includes `start`, `finish`, `route` (a GeoJSON Feature with a complete
+LineString), provider/location attribution, and `cached`. Route properties
+contain `distance_meters`, `distance_miles`, and `duration_seconds`.
+Geometry uses `[longitude, latitude]` order. This endpoint currently retrieves
+routes only: fuel stops, costs, and a rendered map are not implemented yet.
+
+Each cache miss makes one driving-car GeoJSON directions request, with no
+endpoint-geocoding requests or automatic retries. Border crossings and ferries
+are prohibited in that request. See [requirements](REQUIREMENTS.md) for all
+behavioral assumptions, including vehicle-profile and location limitations.
+The hosted service has
+[distance and other restrictions](https://giscience.github.io/openrouteservice/hosted-api-restrictions);
+its documented standard driving-route maximum is 6,000 km. Quotas and service
+availability are provider-dependent; a free tier is not an unlimited service.
+
+Routes are cached for one hour in Django's database cache. Run
+`python manage.py createcachetable` once after database setup (and after a
+database reset). Cached routes are shared between workers and survive process
+restarts. Coordinate changes produce different cache keys; fuel prices do not
+invalidate geometry. Concurrent identical misses are not coalesced.
+Do not delete the cache table while serving requests.
+
+Errors are explicit: invalid/unavailable city IDs or identical endpoints return
+400; unsupported/no-route provider results return 422; missing keys,
+provider access denial, or quota exhaustion return 503; upstream failures or
+malformed responses return 502; timeouts return 504. Failed responses are never
+cached. Provider request timeout is 20 seconds. Provider failures are logged
+without exposing API keys or raw upstream response bodies.
+
+Automated routing tests mock the provider; they do not consume API quota.
+Use Postman with a real key for live verification. Token/role authentication is
+not enabled yet; do not expose this assessment endpoint publicly without access
+controls and quota protection.
+
+## Production recommendations
+
+The current SQLite database and database-backed route cache are sufficient
+for this assessment. For a production deployment:
+
+- **Database:** prefer PostgreSQL for concurrent application workers, stronger
+  operational tooling, and managed backups. Consider PostGIS if station
+  proximity/corridor searches need spatial indexes; it is not required merely
+  to store city coordinates. Moving to PostgreSQL does not reduce external
+  routing-provider latency.
+- **Cache:** use shared Redis through Django's cache framework for route
+  caching, reducing database load and cache-access latency. Keep the route TTL
+  and coordinate/options-based keys. Configure memory limits and eviction;
+  cached routes are disposable and must be safe to recompute. Redis persistence
+  is optional, unlike durable station/city data in PostgreSQL.
+- **Provider quota:** add request coalescing for identical cache misses,
+  application-level throttling, and monitoring of cache hit rate and upstream
+  errors. A faster cache alone does not prevent concurrent misses from
+  consuming multiple routing requests.
+
+These are recommendations, not configured production infrastructure.
+
 ## Validation
 
 ```powershell
-python manage.py test truckstops
+python manage.py test truckstops routing
 python manage.py makemigrations --check --dry-run
 ```
