@@ -185,8 +185,18 @@ other assessment API endpoints.
 ## Routing API
 
 Routing uses [openrouteservice](https://openrouteservice.org/), which offers a
-free tier requiring an API key. Create a key in the provider's account portal
-and export it before starting Django. In PowerShell:
+free tier requiring an API key.
+
+To obtain `ORS_API_KEY`:
+
+1. Register for a free account in the
+   [openrouteservice dashboard](https://playground.heigit.org/#/signup).
+2. Sign in and create an API key using the free plan in the dashboard.
+3. Copy that key and set it as `ORS_API_KEY` before starting Django, as shown
+   below. This is the routing provider's key, not an authentication token for
+   this application's endpoints.
+
+In PowerShell:
 
 ```powershell
 $env:ORS_API_KEY = "YOUR_API_KEY"
