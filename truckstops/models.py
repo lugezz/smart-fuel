@@ -13,6 +13,58 @@ CANADIAN_PROVINCES = frozenset(
 )
 
 
+def normalize_city(city: str) -> str:
+    return " ".join(city.split()).casefold()
+
+
+class CityLocation(models.Model):
+    class Status(models.TextChoices):
+        PENDING = "pending", "Pending"
+        RESOLVED = "resolved", "Resolved"
+        NOT_FOUND = "not_found", "Not found"
+        AMBIGUOUS = "ambiguous", "Ambiguous"
+
+    city = models.CharField(max_length=100)
+    state = models.CharField(max_length=2)
+    country = models.CharField(max_length=2)
+    latitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    longitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    status = models.CharField(max_length=12, choices=Status.choices, default=Status.PENDING)
+    precision = models.CharField(max_length=10, default="city", editable=False)
+    provider = models.CharField(max_length=100, blank=True)
+    source_id = models.CharField(max_length=100, blank=True)
+    attribution = models.TextField(blank=True)
+    last_error = models.TextField(blank=True)
+    imported_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=("city", "state", "country"), name="unique_city_region"),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(
+                        status="resolved", latitude__isnull=False, longitude__isnull=False,
+                        latitude__gte=-90, latitude__lte=90, longitude__gte=-180, longitude__lte=180,
+                    )
+                    | (
+                        ~models.Q(status="resolved")
+                        & models.Q(latitude__isnull=True, longitude__isnull=True)
+                    )
+                ),
+                name="city_location_status_coordinates",
+            ),
+        ]
+
+    def save(self, *args, **kwargs) -> None:
+        self.city = normalize_city(self.city)
+        self.state = self.state.strip().upper()
+        self.country = self.country.strip().upper()
+        super().save(*args, **kwargs)
+
+    def __str__(self) -> str:
+        return f"{self.city}, {self.state}, {self.country} ({self.status})"
+
+
 class TruckStop(models.Model):
     class Country(models.TextChoices):
         USA = "US", "United States"
@@ -24,6 +76,9 @@ class TruckStop(models.Model):
     city = models.CharField(max_length=100)
     state = models.CharField(max_length=2)
     country = models.CharField(max_length=2, choices=Country.choices, db_index=True)
+    city_location = models.ForeignKey(
+        CityLocation, null=True, blank=True, on_delete=models.PROTECT, related_name="truckstops"
+    )
     rack_id = models.PositiveIntegerField(validators=[MinValueValidator(1)])
     retail_price = models.DecimalField(
         max_digits=12,

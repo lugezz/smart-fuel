@@ -9,6 +9,9 @@
 # DB
 *.sqlite3
 
+# Download locally; SimpleMaps restricts public dataset redistribution.
+/data/us*
+
 # Otros
 Todo.txt
 __pycache__/

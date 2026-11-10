@@ -8,7 +8,13 @@ from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 from django.utils import timezone
 
-from ...models import CANADIAN_PROVINCES, US_STATES, TruckStop
+from ...models import (
+    CANADIAN_PROVINCES,
+    US_STATES,
+    CityLocation,
+    TruckStop,
+    normalize_city,
+)
 
 CSV_FIELDS = {
     "OPIS Truckstop ID": "opis_id",
@@ -81,6 +87,7 @@ class Command(BaseCommand):
         created: list[TruckStop] = []
         updated: list[TruckStop] = []
         with transaction.atomic():
+            self.link_cities(stations)
             existing = TruckStop.objects.in_bulk(stations, field_name="opis_id")
             for opis_id, station in stations.items():
                 saved = existing.get(opis_id)
@@ -88,15 +95,15 @@ class Command(BaseCommand):
                     created.append(station)
                 elif any(
                     getattr(saved, field) != getattr(station, field)
-                    for field in IMPORT_FIELDS
+                    for field in (*IMPORT_FIELDS, "city_location_id")
                 ):
-                    for field in IMPORT_FIELDS:
+                    for field in (*IMPORT_FIELDS, "city_location_id"):
                         setattr(saved, field, getattr(station, field))
                     saved.updated_at = timezone.now()
                     updated.append(saved)
             TruckStop.objects.bulk_create(created, batch_size=500)
             TruckStop.objects.bulk_update(
-                updated, [*IMPORT_FIELDS, "updated_at"], batch_size=500
+                updated, [*IMPORT_FIELDS, "city_location", "updated_at"], batch_size=500
             )
 
         self.stdout.write(self.style.SUCCESS(
@@ -114,6 +121,20 @@ class Command(BaseCommand):
             f"IDs with conflicting names: {len(name_conflicts)}. "
             "Lowest price retained; first row wins equal-price ties."
         )
+
+    @staticmethod
+    def link_cities(stations: dict[int, TruckStop]) -> None:
+        city_locations = {
+            (location.city, location.state, location.country): location
+            for location in CityLocation.objects.all()
+        }
+        for station in stations.values():
+            key = (normalize_city(station.city), station.state, station.country)
+            if key not in city_locations:
+                city_locations[key], _ = CityLocation.objects.get_or_create(
+                    city=key[0], state=key[1], country=key[2]
+                )
+            station.city_location = city_locations[key]
 
     @staticmethod
     def parse_row(row: dict, line: int) -> TruckStop:
