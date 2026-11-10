@@ -36,6 +36,10 @@ These are implementation decisions, not additional assignment requirements.
   They approximate station locations and do not establish actual station
   access, detour distance, or real-world reachability.
 - Exclude Canadian stations and unresolved US locations from route planning.
+- Expose all imported stations through the read-only truck-stop catalog,
+  including Canadian and unresolved records. Catalog visibility is separate
+  from route eligibility. Detail URLs use database IDs, not OPIS IDs; city
+  coordinates and match status remain separate from station coordinates.
 - Retain the lowest listed price per OPIS station ID; the CSV does not
   identify fuel types or price timestamps.
 - Interpret the external-call target per route request. Offline CSV imports

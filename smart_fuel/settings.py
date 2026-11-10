@@ -84,6 +84,8 @@ ORS_API_KEY = os.environ.get("ORS_API_KEY", "")
 REST_FRAMEWORK = {
     "DEFAULT_RENDERER_CLASSES": ["rest_framework.renderers.JSONRenderer"],
 }
+
+# Route cache settings
 ROUTE_CACHE_TIMEOUT = 3600  # Cache timeout for 1 hour
 CACHES = {
     "default": {
@@ -119,11 +121,8 @@ AUTH_PASSWORD_VALIDATORS = [
 # https://docs.djangoproject.com/en/6.1/topics/i18n/
 
 LANGUAGE_CODE = 'en-us'
-
 TIME_ZONE = 'UTC'
-
 USE_I18N = True
-
 USE_TZ = True
 
 

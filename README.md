@@ -150,6 +150,38 @@ coverage. Dataset updates may change these counts.
 No external geocoding service, API key, identifying User-Agent, or network
 access is required for city enrichment.
 
+## Truck-stop catalog API
+
+Read-only endpoints expose all imported stations, including Canadian stations
+and stations with unresolved or absent city locations:
+
+```http
+GET /api/truckstops/
+GET /api/truckstops/?country=US&state=OK&city=big
+GET /api/truckstops/<id>/
+```
+
+List responses contain `count`, `next`, `previous`, and `results`, ordered by
+OPIS ID with 50 records per page (`?page=2`). Optional `country` (`US` or `CA`)
+and `state` filters match codes exactly, ignoring case; `city` is a
+case-insensitive substring search. Filters can be combined. Invalid codes
+or country/state combinations return JSON 400.
+
+Detail URLs use the database `id`, not `opis_id`. Each station includes both
+identifiers, name, address, city/state/country, rack ID, retail price (an
+eight-decimal string), station-specific latitude/longitude, update time, and
+nested `city_location`. The latter exposes city-level coordinates, precision,
+match status, provider, source ID, and attribution. An unlinked station has
+`city_location: null`; an unresolved city has a non-resolved status and null
+coordinates. City coordinates are not verified station coordinates.
+
+Missing stations return JSON 404. Write methods return JSON 405. Catalog
+visibility does not imply route eligibility: fuel planning still excludes
+Canadian and unresolved locations. Canadian price units/currency are not
+inferred from the catalog. No external API calls are made for these endpoints.
+These endpoints currently use the same unauthenticated access policy as the
+other assessment API endpoints.
+
 ## Routing API
 
 Routing uses [openrouteservice](https://openrouteservice.org/), which offers a

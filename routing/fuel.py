@@ -176,7 +176,8 @@ def make_fuel_plan(route: RouteFeature, start: CityLocation, finish: CityLocatio
             "sequence": len(stops) + 1,
             "is_origin": point.distance == 0,
             "station": {
-                "opis_id": station.opis_id, "name": station.name,
+                "opis_id": station.opis_id,
+                "name": station.name,
                 "city": station.city, "state": station.state, "country": station.country,
                 "city_location_id": station.city_location_id,
                 "latitude": str(station.city_location.latitude),
